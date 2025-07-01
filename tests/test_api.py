@@ -103,7 +103,7 @@ def test_invalid_token():
 
 
 def test_wrong_method():
-    """Использование неверного HTTP-метода"""
+    """Использование неверного типа запроса"""
     response = requests.put(
         f"{BASE_URL}/search",
         headers=HEADERS
