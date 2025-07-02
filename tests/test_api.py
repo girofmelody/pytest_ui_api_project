@@ -1,11 +1,6 @@
 import requests
 import allure
-
-# Конфигурация
-BASE_URL = "https://api.kinopoisk.dev/v1.4/movie"
-TOKEN = "7ZNT1K6-KY343HV-QJQG6T0-TK2CH15"
-HEADERS = {"X-API-Key": TOKEN}
-
+from config.config import BASE_URL, HEADERS
 
 # Позитивные тесты
 @allure.feature("Позитивные тесты")

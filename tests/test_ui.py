@@ -1,131 +1,115 @@
 import pytest
+import allure
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+from config.config import INTOUCH_URL, UP_URL, UI_URL
 
 
-@pytest.fixture
-def browser():
-    # Настройки Chrome для обхода блокировок
-    options = webdriver.ChromeOptions()
+@pytest.fixture(scope="module")
+def driver():
+  options = webdriver.ChromeOptions()
+  options.add_argument("user-agent=Mozilla/5.0 (macOS Sequoia 15.5)")
+  driver = webdriver.Chrome(options=options)
+  driver.maximize_window()
+  driver.get(UI_URL)
+  yield driver
+  driver.quit()
 
-    # Основные параметры
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("--window-size=1440,900")
-    options.add_argument(
-        "user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-    options.add_argument("--lang=ru-RU")
+@allure.title("Проверка, что заголовок содержит 'Кинопоиск'")
+def test_title_contains_kinopoisk(driver):
+  with allure.step("Дождаться полной загрузки сайта Кинопоиск"):
+    WebDriverWait(driver, 20).until(
+      EC.presence_of_element_located((By.CSS_SELECTOR, '[data-tid="a9c24010"]'))
+    )
+  with allure.step("Проверить, что заголовок содержит 'Кинопоиск'"):
+    assert "Кинопоиск" in driver.title
 
-    # Для режима разработчика
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
+@allure.title("Поиск фильма 'Головоломка' и проверка результатов")
+def test_search_movie(driver):
+  with allure.step("Дождаться полной загрузки сайта Кинопоиск"):
+    WebDriverWait(driver, 20).until(
+      EC.visibility_of_element_located((By.CSS_SELECTOR, '[data-tid="a9c24010"]'))
+    )
+  with allure.step("Ввести название фильма в поисковую строку"):
+    search_input = WebDriverWait(driver, 20).until(
+      EC.element_to_be_clickable((By.NAME, "kp_query"))
+    )
+    search_input.clear()
+    search_input.send_keys("Головоломка")
+    search_input.send_keys(Keys.RETURN)
 
-    driver = webdriver.Chrome(options=options)
+  with (allure.step("Дождаться результатов поиска и проверить наличие фильма")):
+    results = WebDriverWait(driver, 10).until(
+      EC.visibility_of_all_elements_located((By.CSS_SELECTOR,
+        '[data-tid="3e4d64d9"]'))
+    )
+    assert any("Головоломка" in result.text for result in results
+      ), "Фильм не найден в результатах поиска"
 
-    # Маскируем WebDriver
-    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-        "source": """
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            })
-        """
-    })
+@allure.title("Переход на страницу фильма 'Мстители' по первому результату поиска")
+def test_navigate_to_movie_page(driver):
+  with allure.step("Дождаться полной загрузки сайта Кинопоиск"):
+    WebDriverWait(driver, 20).until(
+      EC.presence_of_element_located((By.CSS_SELECTOR, '[data-tid="a9c24010"]'))
+    )
+  with allure.step("Ввести название фильма 'Мстители' в поисковую строку"):
+    search_input = WebDriverWait(driver, 20).until(
+      EC.presence_of_element_located((By.NAME, "kp_query"))
+    )
+    search_input.clear()
+    search_input.send_keys("Мстители")
+    search_input.send_keys(Keys.RETURN)
+  with allure.step("Кликнуть по первому результату поиска"):
+    first_result = WebDriverWait(driver, 10).until(
+      EC.element_to_be_clickable((By.XPATH,
+        "//a[text()='Мстители']"))
+    )
+    first_result.click()
+  with allure.step("Проверить, что URL содержит ID фильма"):
+    WebDriverWait(driver, 10).until(lambda d: "263531" in d.current_url.lower())
 
-    yield driver
-    driver.quit()
+@allure.title("Открытие вкладки с наградами фильма '1+1'")
+def test_open_awards_tab(driver):
+  with allure.step("Дождаться полной загрузки сайта Кинопоиск"):
+    WebDriverWait(driver, 20).until(
+      EC.presence_of_element_located((By.CSS_SELECTOR, '[data-tid="a9c24010"]'))
+    )
 
+  with allure.step("Перейти на страницу фильма '1+1'"):
+    driver.get(INTOUCH_URL)
 
-def test_search_1plus1(browser):
-    try:
-        # 1. Открываем страницу
-        browser.get("https://www.kinopoisk.ru/")
+  with allure.step("Перейти во вкладку с наградами"):
+    awards_tab = WebDriverWait(driver, 20).until(
+      EC.element_to_be_clickable((By.CSS_SELECTOR, 'a[href*="/awards"]')))
+    awards_tab.click()
 
-        # 2. Закрываем мешающие элементы
-        def close_popups():
-            try:
-                browser.find_element(By.XPATH, "//div[contains(@class,'popup')]//button[contains(.,'Закрыть')]").click()
-            except:
-                pass
+  with allure.step("Проверить наличие заголовка 'Награды' на странице"):
+    header = WebDriverWait(driver, 20).until(
+      EC.visibility_of_element_located((By.CSS_SELECTOR, 'h1 > a[href="/awards/"]'))
+    )
+    assert "Награды" in header.text
 
-        close_popups()
+@allure.title("Открытие вкладки с рецензиями фильма 'Вверх'")
+def test_open_reviews_page(driver):
+  with allure.step("Дождаться полной загрузки сайта Кинопоиск"):
+    WebDriverWait(driver, 20).until(
+      EC.presence_of_element_located((By.CSS_SELECTOR, '[data-tid="a9c24010"]'))
+    )
 
-        # 3. Поиск фильма (3 варианта локаторов)
-        search_locators = [
-            (By.NAME, "kp_query"),
-            (By.XPATH, "//input[contains(@class,'search-input')]"),
-            (By.CSS_SELECTOR, "input[placeholder*='фильмы']")
-        ]
+  with allure.step("Перейти на страницу фильма 'Вверх'"):
+    driver.get(UP_URL)
 
-        for locator in search_locators:
-            try:
-                search = WebDriverWait(browser, 5).until(
-                    EC.presence_of_element_located(locator)
-                )
-                search.clear()
-                search.send_keys("1+1" + Keys.RETURN)
-                break
-            except TimeoutException:
-                continue
-        else:
-            pytest.fail("Не найдено поле поиска")
+  with allure.step("Перейти во вкладку с рецензиями"):
+    reviews_tab = WebDriverWait(driver, 20).until(
+      EC.element_to_be_clickable((By.CSS_SELECTOR, 'a[href*="/reviews"]')))
+    reviews_tab.click()
 
-        # 4. Проверка результатов
-        WebDriverWait(browser, 10).until(
-            EC.presence_of_element_located(
-                (By.XPATH, "//*[contains(translate(text(), 'INT', 'int'), '1+1') or contains(text(), 'Intouchables')]")
-            )
-        )
-
-    except Exception as e:
-        browser.save_screenshot("search_error.png")
-        pytest.fail(f"Тест поиска упал: {str(e)}")
-
-
-def test_1plus1_movie_page(browser):
-    # Прямой переход на страницу фильма (ID 535341)
-    browser.get("https://www.kinopoisk.ru/film/535341/")
-
-    try:
-        # Проверяем русское и международное название
-        title = WebDriverWait(browser, 15).until(
-            EC.visibility_of_element_located(
-                (By.XPATH, "//h1[contains(., '1+1') or contains(., 'Intouchables')]")
-            )
-        )
-
-        # Дополнительная проверка года выпуска
-        year = WebDriverWait(browser, 5).until(
-            EC.presence_of_element_located(
-                (By.XPATH, "//a[contains(@href,'/lists/movies/') and contains(text(),'2011')]")
-            )
-        )
-
-        assert "1+1" in title.text
-        assert "2011" in year.text
-
-    except TimeoutException:
-        browser.save_screenshot("movie_page_error.png")
-        pytest.skip("Страница фильма не загрузилась корректно")
-
-
-def test_1plus1_rating(browser):
-    """Проверка рейтинга фильма"""
-    browser.get("https://www.kinopoisk.ru/film/535341/")
-
-    try:
-        rating = WebDriverWait(browser, 10).until(
-            EC.visibility_of_element_located(
-                (By.XPATH, "//div[contains(@class,'film-rating')]//span[contains(@class,'value')]")
-            )
-        )
-
-        # Проверяем что рейтинг адекватный (между 8.0 и 9.0)
-        rating_value = float(rating.text.replace(',', '.'))
-        assert 8.0 <= rating_value <= 9.0
-
-    except Exception as e:
-        browser.save_screenshot("rating_error.png")
-        pytest.fail(f"Ошибка проверки рейтинга: {str(e)}")
+  with allure.step("Проверить наличие кнопки 'Добавить рецензию' на странице"):
+    button = WebDriverWait(driver, 20).until(
+      EC.visibility_of_element_located((
+        By.CSS_SELECTOR, "a.formReviewAncor:nth-of-type(2)"))
+    )
+    assert "Добавить рецензию" in button.text
